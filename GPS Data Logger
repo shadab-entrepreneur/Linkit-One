@@ -1,11 +1,6 @@
-#include <LFlash.h>
-#include <LSD.h>
-#include <LStorage.h>
 #include <LGPS.h>
-
-//uncomment the storage you want to use
-#define Drv LFlash          // use Internal 10M Flash
-// #define Drv LSD           // use SD card
+#include <LGPRS.h>
+#include <LGPRSClient.h>
 
 gpsSentenceInfoStruct info; //needed to get GPS data
 
@@ -25,70 +20,47 @@ String lat_format = "0.00000", lon_format = "0.00000";
 char file[15] = "";
 int pause = 3000; //time in milliseconds between two logs
 
+char server[] = "yourserver.com";
+int port = 80; // HTTP
+LGPRSClient client;
+
 void setup()
 {
   Serial.begin(115200);
-  Serial.print("Initializing memory...");
-  pinMode(10, OUTPUT); //needed for SD card
-  if(!Drv.begin())
-  {
-    Serial.println("Error initalizing memory.");  
-    while(true);
-  }
-  Serial.println("OK.");
   LGPS.powerOn();
   Serial.println("GPS started.");
-
+  Serial.print("Attaching GPRS...");
+  while (!LGPRS.attachGPRS())delay(500);
+  Serial.println("OK.");
 }
-
 void loop()
 {
   if (getData(&info) > 3)
   {
-    String str = "";
-    str += date_format;
-    str += ",";
-    str += time_format;
-    str += ",";
-    str += lat_format;
-    str += ",";
-    str += lon_format;
-    str += ",";
-    str += altitude;
-    str += ",";
-    str += dop;
-    str += ",";
-    str += geoid;
-    str += ",";
-    str += track_angle;
-    str += ",";
-    str += m_speed;
-    str += ",";
-    str += k_speed;
-    str += ",";
-    str += fix;
-    str += ",";
-    str += sat_num;
-    Serial.println(str);
-    String file_name = date_format;
-    file_name += ".txt";
-    file_name.toCharArray(file, 14);
-    Serial.println(file);
-    LFile dataFile = Drv.open(file, FILE_WRITE);
-    if (dataFile)
+    if (client.connect(server, port))
     {
-      dataFile.println(str);
-      dataFile.close();
-      Serial.println("File written.");
+      Serial.println("connected");
+      String str = "GET /store_data.php?";
+      str += "date=";
+      str += date_format;
+      str += "&time=";
+      str += time_format;
+      str += "&lat=";
+      str += lat_format;
+      str += "&lon=";
+      str += lon_format;
+      client.print(str);
+      client.println(" HTTP/1.1");
+      client.print("Host: ");
+      client.println(server);
+      client.println("Connection: close");
+      client.println();
     }
-    else Serial.println("Error opening file.");
-
-
+    else Serial.println("Unable to connect");
   }
   else Serial.println("Less then 4 satelites.");
   delay(pause);
 }
-
 /**
 *Converts degrees from (d)ddmm.mmmm to (d)dd.mmmmmm
 *@param str the string rappresentation of the angle in (d)ddmm.mmmm format
@@ -103,7 +75,6 @@ float convert(String str, boolean dir)
   mm = str.substring(point - 2).toFloat() / 60.00;
   return (dir ? -1 : 1) * (dd + mm);
 }
-
 /**
 *Gets gps informations
 *@param info gpsSentenceInfoStruct is a struct containing NMEA sentence infomation
@@ -142,7 +113,6 @@ int getData(gpsSentenceInfoStruct* info)
     lon_format = s.substring(0, (abs(longitude) < 100) ? 2 : 3);
     lon_format += '.';
     lon_format += s.substring((abs(longitude) < 100) ? 2 : 3);
-
     str = str.substring(str.indexOf(',') + 3);
     fix = str.charAt(0) - 48;
     str = str.substring(2);
@@ -154,7 +124,6 @@ int getData(gpsSentenceInfoStruct* info)
     str = str.substring(str.indexOf(',') + 3);
     geoid = str.substring(0, str.indexOf(',')).toFloat();
     Serial.println("done.");
-    
     if (info->GPRMC[0] == '$')
     {
       Serial.print("Parsing RMC data....");
@@ -172,7 +141,6 @@ int getData(gpsSentenceInfoStruct* info)
           }
         }
       }
-
       str = str.substring(comma);
       k_speed = str.substring(0, str.indexOf(',')).toFloat();
       m_speed = k_speed * 0.514;
